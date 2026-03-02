@@ -1,7 +1,7 @@
 # proxy.py
 import argparse, socket, threading, json, time, collections
 
-# ---------------- LRU Cache (Copied from server.py) ----------------
+#  LRU Cache (Copy from server.py) ד
 class LRUCache:
     """Minimal LRU cache based on OrderedDict."""
     def __init__(self, capacity: int = 256): # הגדלנו קצת את גודל ברירת המחדל
@@ -119,7 +119,7 @@ def handle(c, sh, sp):
 
 def main():
     global PROXY_CACHE
-    
+    #ארגומנטים להוספה בתחילת ההרצה של התכנית
     ap = argparse.ArgumentParser(description="Application-level TCP proxy with Caching (Persistent Connection)")
     ap.add_argument("--listen-host", default="127.0.0.1")
     ap.add_argument("--listen-port", type=int, default=5554)
@@ -127,9 +127,10 @@ def main():
     ap.add_argument("--server-port", type=int, default=5555)
     ap.add_argument("--cache-size", type=int, default=256, help="Capacity of the proxy cache")
     args = ap.parse_args()
-    
+    #יצירת מטמון חדש עבור הפרוקסי
     PROXY_CACHE = LRUCache(capacity=args.cache_size)
-
+    #אותו דבר שיש בקוד הלקוח 
+    #פתיחת סוקט וקישור שלו לתהליכון לכל לקוח
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((args.listen_host, args.listen_port))

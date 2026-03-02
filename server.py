@@ -81,7 +81,7 @@ def call_gpt(prompt: str) -> str:
     """
     if OPENAI_CLIENT is None:
         # Stub/Fallback (כנדרש אם המפתח אינו זמין) [cite: 72]
-        return f"[GPT-STUB] Received a prompt of length {len(prompt)} chars. (API inactive)"
+        return f"[GPT-STUB] Received a prompt of length {len(prompt)} chars. (API inactive)\n aggread ans is: 'NETWORKS'"
 
     try:
         response = OPENAI_CLIENT.chat.completions.create(
@@ -97,7 +97,6 @@ def call_gpt(prompt: str) -> str:
 
 # ---------------- Server core ----------------
 def handle_request(msg: Dict[str, Any], cache: LRUCache) -> Dict[str, Any]:
-    # ... (קוד handle_request נשאר זהה) ...
     mode = msg.get("mode")
     data = msg.get("data") or {}
     options = msg.get("options") or {}
@@ -107,45 +106,49 @@ def handle_request(msg: Dict[str, Any], cache: LRUCache) -> Dict[str, Any]:
     # מייצרים מפתח מטמון מתוך ההודעה המלאה
     cache_key = json.dumps(msg, sort_keys=True) 
 
-    if use_cache:
-        hit = cache.get(cache_key)
-        if hit is not None:
+    if use_cache:#תשתמש במטמון אם הוקלד כך בהגדרות
+        hit = cache.get(cache_key)#תבדוק אם הייתה קריאה כזו 
+        if hit is not None:# אם הייתה קריאה כזו אז תחזיר את התשובה שהחזרת פעם קודמת בלי לחשב
             return {"ok": True, "result": hit, "meta": {"from_cache": True, "took_ms": int((time.time()-started)*1000)}}
 
     try:
-        if mode == "calc":
-            expr = data.get("expr")
+        if mode == "calc":# אם הוקלד מוד המחשבון
+            expr = data.get("expr")#שואבים ביטוי מתוך הביטויים שהוכנו מראש
             if not expr or not isinstance(expr, str):
                 return {"ok": False, "error": "Bad request: 'expr' is required (string)"}
-            res = safe_eval_expr(expr)
+            res = safe_eval_expr(expr)#תחשב ותשים ב RES
         elif mode == "gpt":
             prompt = data.get("prompt")
             if not prompt or not isinstance(prompt, str):
                 return {"ok": False, "error": "Bad request: 'prompt' is required (string)"}
-            res = call_gpt(prompt)
+            res = call_gpt(prompt)# אם זה GPT אז שים את התשובה שיחזיר בRES
         else:
             return {"ok": False, "error": "Bad request: unknown mode"}
 
-        took = int((time.time()-started)*1000)
+        took = int((time.time()-started)*1000)#זמן שלקח לחישוב או לשליפה מהמטמון
         if use_cache:
-            cache.set(cache_key, res)
+            cache.set(cache_key, res)#עכשיו בגלל שלא נצצא במטמון תכניס אותו
             
         # הוספת ה-meta data של השרת
+        #את כל התשובה תחזיר וגם את המידע על השרת ואיך שחישב
         return {"ok": True, "result": res, "meta": {"from_cache": False, "took_ms": took}}
     except Exception as e:
         return {"ok": False, "error": f"Server error: {e}"}
 
 def serve(host: str, port: int, cache_size: int):
     # ... (קוד serve נשאר זהה) ...
-    cache = LRUCache(cache_size)
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    cache = LRUCache(cache_size)# יצירת מטמון חדש שבו נשמור את הבקשות מהלקוחות.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:# הקמת צינור חדש לתקשורת 
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        s.bind((host, port))
-        s.listen(16)
+        s.bind((host, port))#הגדרת הפורט והכתובת לפי מה שהחלטנו בראש
+        s.listen(16)#פה הוא יקשיב וישים בהמתנה עד 16 בקשות עד שינתק אותן
         print(f"[server] listening on {host}:{port} (cache={cache_size})")
         while True:
-            conn, addr = s.accept()
+            conn, addr = s.accept()#ממתין ללקוח ולא ממשיך עד שחוזר אובייקט .
+            #אחרי זה משייך אותו לכתובת ולפורט מתאים
+            
             # מפעיל תהליכון נפרד לטיפול בלקוח
+            #משייך את הלקוח הפורט וכו שריבלנו לתהליכון חדש
             threading.Thread(target=handle_client, args=(conn, addr, cache), daemon=True).start()
 
 def handle_client(conn: socket.socket, addr, cache: LRUCache):
@@ -158,17 +161,19 @@ def handle_client(conn: socket.socket, addr, cache: LRUCache):
                 if not chunk:
                     break
                 raw += chunk
+                #אם מה שקיבלת ונאגר בCHUNK הוא ריק אז צא, אחרת, תכניס אותו לRAW
                 
                 # לולאה פנימית לטיפול בבקשות מרובות שנשלחו ב-Pipe
-                while b"\n" in raw:
+                while b"\n" in raw:#אם אתה מבין שהגעת לסוף הודעה בגלל" /n" אז תתחיל לעבד את ההודעה.
                     line, _, rest = raw.partition(b"\n")
-                    raw = rest
+                    raw = rest  #אם ההודעה שקיבלת מכילה מעבר ל "/n"  אז את כל מה שמעבר תשמור ב RAW.
                     
                     # 1. עיבוד
-                    msg = json.loads(line.decode("utf-8"))
-                    resp = handle_request(msg, cache)
+                    msg = json.loads(line.decode("utf-8")) #תפרש את הקובץ המקודד ותשמור אותו ב MSG 
+                    resp = handle_request(msg, cache) #תיגש לפונקציה הזו ותבין אם זה עבור GPT או אחר.
                     
                     # 2. שליחה חזרה
+                    #תשלח את מה שקיבלת חזרה ב resp לאחר קידוד שתכניס ל out.
                     out = (json.dumps(resp, ensure_ascii=False) + "\n").encode("utf-8")
                     conn.sendall(out)
                 

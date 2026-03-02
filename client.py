@@ -41,75 +41,106 @@ def get_calc_expression() -> str:
             print("קלט לא חוקי. נסה שוב.")
 
 # --- 2. פונקציית שליחת הבקשה (REQUEST) ---
-def request(host: str, port: int, payload: dict) -> dict:
-    """Send a single JSON-line request and return a single JSON-line response."""
+def request(sock: socket.socket, payload: dict) -> dict:
+    """שליחת בקשה וקבלת תשובה על סוקט קיים"""
     data = (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
-    with socket.create_connection((host, port), timeout=5) as s:
-        s.sendall(data)
-        buff = b""
-        while True:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            buff += chunk
-            if b"\n" in buff:
-                line, _, _ = buff.partition(b"\n")
-                return json.loads(line.decode("utf-8"))
+    sock.sendall(data)
+    buff = b""
+    
+    while True:
+        chunk = sock.recv(4096)# מתחילה לקבל את כל המידע ששולח השרת אבל עד 4096 בתים
+        if not chunk:
+            break
+        
+        buff += chunk # פההבאפר אוסף את כל החבילות ואוסף אותן למשתנה אחד
+        if b"\n" in buff:
+            line, _, _ = buff.partition(b"\n")# מחברת את כל החבילות שהתקבלו לאחת שלמה
+            return json.loads(line.decode("utf-8"))# השורה הזו מחזירה את התשובה הסופית אחרי פיענוח
+            
     return {"ok": False, "error": "No response"}
 
 # --- 3. הפונקציה הראשית (MAIN) ---
 def main():
+    # קלט מהמשתמש
+    #user_mode = input("mode you want (calc/gpt): ").strip()
+        
+    
     ap = argparse.ArgumentParser(description="Client (calc/gpt over JSON TCP)")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=5555)
-    ap.add_argument("--mode", choices=["calc", "gpt"], required=True)
+    # שינוי: required=False כדי שלא יזרוק שגיאה אם לא עבר בטרמינל
+    ap.add_argument("--mode", choices=["calc", "gpt"], required=False)
     ap.add_argument("--expr", help="Expression for mode=calc")
     ap.add_argument("--prompt", help="Prompt for mode=gpt")
     ap.add_argument("--no-cache", action="store_true", help="Disable caching")
-    ap.add_argument("--repeat", type=int, default=1, help="Number of times to repeat the request")
+    ap.add_argument("--repeat", type=int, default=1)
+       
+        
     args = ap.parse_args()
-    payload = None
+    # # עדכון הערך בתוך args (אם לא הוכנס בטרמינל, נשתמש בקלט מה-input)
+    # if not args.mode:
+    #     args.mode = user_mode
 
-    # 1. בניית ה-Payload
-    if args.mode == "calc":
-        if not args.expr:
-            # הפעלת האינטראקטיביות אם לא סופק ביטוי בשורת הפקודה
-            args.expr = get_calc_expression()
+    # # 1. בניית ה-Payload
+    # if args.mode == "calc":
+    #     if not args.expr:
+    #         # הפעלת האינטראקטיביות אם לא סופק ביטוי בשורת הפקודה
+    #         args.expr = get_calc_expression()
             
-        if not args.expr:
-            print("לא נבחר ביטוי לחישוב.", file=sys.stderr); sys.exit(2)
+    #     if not args.expr:
+    #         print("לא נבחר ביטוי לחישוב.", file=sys.stderr); 
+    #         main() # קורא שוב לMAIN לאחר קלט לא מתאים.calc
             
-        payload = {"mode": "calc", "data": {"expr": args.expr}, "options": {"cache": not args.no_cache}}
+    #     payload = {"mode": "calc", "data": {"expr": args.expr}, "options": {"cache": not args.no_cache}}
         
-    elif args.mode == "gpt":
-        if not args.prompt:
-            # הפעלת האינטראקטיביות אם לא סופק פרומפט בשורת הפקודה
-            print("\n--- בחירת פרומפט ל-GPT ---")
-            args.prompt = input("הקלד את הפרומפט שלך: ").strip()
+    # elif args.mode == "gpt":
+    #     if not args.prompt:
+    #         # הפעלת האינטראקטיביות אם לא סופק פרומפט בשורת הפקודה
+    #         print("\n--- בחירת פרומפט ל-GPT ---")
+    #         args.prompt = input("הקלד את הפרומפט שלך: ").strip()
             
-        if not args.prompt:
-            print("לא נבחר פרומפט.", file=sys.stderr); sys.exit(2)
+    #     if not args.prompt:
+    #         print("לא נבחר פרומפט.", file=sys.stderr); 
             
-        payload = {"mode": "gpt", "data": {"prompt": args.prompt}, "options": {"cache": not args.no_cache}}
+    #     payload = {"mode": "gpt", "data": {"prompt": args.prompt}, "options": {"cache": not args.no_cache}}
 
-    # 2. לולאת החזרות (REPEATER)
-    if payload is None:
-        print("שגיאה: Payload לא הוגדר.", file=sys.stderr); sys.exit(3)
+    # 2. לולאת החזרות (REPEATER) עם חיבור רציף
+    # payload = {"mode": "calc", "data": {"expr": None}, "options": {"cache": True}}
+    # if payload is None:
+    #     print("שגיאה: Payload לא הוגדר.", file=sys.stderr); sys.exit(3)
         
-    for i in range(args.repeat):
-        print(f"\n שולח בקשה #{i + 1}/{args.repeat} ל- {args.host}:{args.port}...")
-        
-        try:
-            resp = request(args.host, args.port, payload)
-            
-            # הדפסת התגובה מיד
-            print("--- תגובת שרת ---")
-            print(json.dumps(resp, ensure_ascii=False, indent=2))
-            print("-----------------")
+    try:
+        # פתיחת החיבור פעם אחת בלבד עבור כל הבקשות
+        with socket.create_connection((args.host, args.port), timeout=10) as sock:
+            # לולאה שמאפשרת למשתמש לבקש שוב ושוב
+            while True:
+                if not args.mode:
+                    # א. בחירת מוד לכל בקשה חדשה
+                    user_mode = input("\nEnter mode (calc/gpt) or 'exit': ").strip().lower()
+                    if user_mode == 'exit':
+                        break
+                    if user_mode not in ['calc', 'gpt']:
+                        print("Invalid mode!")
+                        continue
 
-        except Exception as e:
-            print(f"שגיאת חיבור או תקשורת: {e}. עוצר את הלולאה.")
-            break
+                # ב. בניית ה-Payload בהתאם למוד
+                if user_mode == "calc":
+                    expr = get_calc_expression()
+                    payload = {"mode": "calc", "data": {"expr": expr}, "options": {"cache": True}}
+                else:
+                    prompt = input("Enter your prompt: ").strip()
+                    payload = {"mode": "gpt", "data": {"prompt": prompt}, "options": {"cache": True}}
+
+                # ג. שליחת הבקשה על הסוקט הקיים
+                print("Sending request...")
+                resp = request(sock, payload)
+                
+                # ד. הדפסת התשובה
+                print("--- Server Response ---")
+                print(json.dumps(resp, ensure_ascii=False, indent=2))
+                
+    except Exception as e:
+        print(f"שגיאת תקשורת: {e}")
             
 if __name__ == "__main__":
     main()
